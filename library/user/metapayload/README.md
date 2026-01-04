@@ -41,7 +41,7 @@ metapayload/
 │   └── payload.sh
 ├── Remove_Payloads/
 │   └── payload.sh
-├── Task_Manager/
+├── Task_Manager/             # Work in progress
 │   └── payload.sh
 └── config/
     └── *.json                # Payload configuration files
@@ -146,4 +146,5 @@ The system automatically selects the appropriate UI picker based on variable nam
 ## Known Issues
 - Backgrounded tasks may produce log output into other payloads' logs if multiple tasks are running simultaneously.
 - Directional button responsiveness when trying to background a running task can be inconsistent; multiple presses may be required.
-- Exiting the payload execution screen while a task is running will orphan the task, making it unmanageable via Task Manager. Use the BACKGROUND option instead.
+- Exiting the payload execution screen while a task is running will orphan the task, making it unmanageable via Task Manager. Use the BACKGROUND (LEFT button) instead of B button to exit running payloads.
+- Killing running tasks via the task management payloads is a bit slow; please be patient for now. 

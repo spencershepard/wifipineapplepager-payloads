@@ -463,6 +463,63 @@ TASK_ID="TASK_ID_PLACEHOLDER"
 TASK_LOG="$TASK_DIR/$TASK_ID.log"
 TASK_META="$TASK_DIR/$TASK_ID.meta"
 
+# Function to recursively find all descendant PIDs
+get_descendants() {
+    local parent_pid="$1"
+    local descendants=""
+    
+    # Find direct children from /proc
+    for proc in /proc/[0-9]*; do
+        [ -f "$proc/stat" ] || continue
+        # Parse PPID - skip past command name in parentheses to avoid spaces in comm field
+        local stat_line=$(cat "$proc/stat" 2>/dev/null)
+        [ -z "$stat_line" ] && continue
+        # Remove everything up to and including the last ) to get past comm field
+        local after_comm="${stat_line##*) }"
+        # PPID is the second field after state (state ppid ...)
+        local ppid=$(echo "$after_comm" | awk '{print $2}')
+        if [ "$ppid" = "$parent_pid" ]; then
+            local child_pid=$(basename "$proc")
+            descendants="$descendants $child_pid"
+            # Recursively get this child's descendants
+            local child_descendants=$(get_descendants "$child_pid")
+            [ -n "$child_descendants" ] && descendants="$descendants$child_descendants"
+        fi
+    done
+    
+    echo "$descendants"
+}
+
+# Function to kill a process and all its descendants
+kill_process_tree() {
+    local pid="$1"
+    local signal="${2:-TERM}"
+    
+    [ -z "$pid" ] && return
+    
+    # Check if process exists before doing anything
+    [ ! -d "/proc/$pid" ] && return
+    
+    # Get all descendants
+    local descendants=$(get_descendants "$pid")
+    
+    # Debug to persistent file
+    echo "[$(date)] kill_process_tree: PID=$pid Signal=$signal Descendants=[$descendants]" >> /tmp/kill_debug.log
+    
+    # Kill descendants first (deepest first)
+    for desc_pid in $descendants; do
+        [ -d "/proc/$desc_pid" ] || continue
+        echo "[$(date)] Killing descendant: $desc_pid" >> /tmp/kill_debug.log
+        kill -$signal "$desc_pid" 2>/dev/null
+    done
+    
+    # Kill the parent last
+    if [ -d "/proc/$pid" ]; then
+        echo "[$(date)] Killing parent: $pid" >> /tmp/kill_debug.log
+        kill -$signal "$pid" 2>/dev/null
+    fi
+}
+
 # Check if task exists
 if [ ! -f "$TASK_META" ]; then
     LOG red "Task not found: $TASK_ID"
@@ -474,6 +531,7 @@ source "$TASK_META"
 
 # Show task info
 LOG purple "Task ID: $TASK_ID"
+LOG purple "PID: $TASK_PID"
 LOG purple "Command: $TASK_CMD"
 LOG purple "Status: $TASK_STATUS"
 LOG purple "Started: $TASK_START_TIME"
@@ -491,14 +549,11 @@ if [ -n "$TASK_PID" ] && kill -0 "$TASK_PID" 2>/dev/null; then
     LOG yellow "Task is currently RUNNING (PID: $TASK_PID)"
 fi
 
-# Interactive menu
-LOG cyan "=========================================="
-LOG cyan "Use directional buttons to select action:"
-LOG cyan "  LEFT  - Tail log (live view)"
-LOG cyan "  RIGHT - Export log to loot"
-LOG cyan "  UP    - Background/Resume task"
-LOG cyan "  DOWN  - Delete task"
-LOG cyan "=========================================="
+LOG "Log tail:"
+LOG "$(tail -n 10 "$TASK_LOG")"
+
+LOG yellow "Waiting for input..."
+LOG yellow "LEFT:Exit | RIGHT:Export | DOWN:Delete Task"
 
 resp=$(WAIT_FOR_INPUT "Press directional button or B to cancel")
 case $? in
@@ -513,13 +568,7 @@ esac
 
 case "$resp" in
     "LEFT")
-        LOG "Tail log"
-        if [ -f "$TASK_LOG" ]; then
-            LOG green "[Live Task Log - Press B to exit]"
-            tail -f "$TASK_LOG"
-        else
-            LOG red "No log file found"
-        fi
+        LOG "Exiting..."
         ;;
     "RIGHT")
         LOG "Export log"
@@ -532,15 +581,7 @@ case "$resp" in
         fi
         ;;
     "UP")
-        # Background/Resume
-        LOG "Background/Resume task"
-        if [ "$TASK_RUNNING" = true ]; then
-            LOG yellow "Task is already running in background (PID: $TASK_PID)"
-            LOG yellow "Use this payload to monitor it"
-        else
-            LOG cyan "Task has already completed"
-            LOG cyan "Status: $TASK_STATUS"
-        fi
+        LOG "Exiting..."
         ;;
     "DOWN")
         # Delete task
@@ -555,10 +596,10 @@ case "$resp" in
                     $DUCKYSCRIPT_USER_CONFIRMED)
                         # Kill task if running
                         if [ "$TASK_RUNNING" = true ]; then
-                            LOG yellow "Terminating running task (PID: $TASK_PID)..."
-                            kill -TERM "$TASK_PID" 2>/dev/null
+                            LOG yellow "Terminating running task (PID: $TASK_PID) and all descendants..."
+                            kill_process_tree "$TASK_PID" TERM
                             sleep 1
-                            kill -KILL "$TASK_PID" 2>/dev/null
+                            kill_process_tree "$TASK_PID" KILL
                         fi
                         
                         # Remove files
@@ -592,10 +633,12 @@ MGMT_PAYLOAD_EOF
 background_task() {
     BACKGROUNDED=true
     
-    # Update metadata to backgrounded status
+    # Update metadata to backgrounded status and update PID to the child process
     sed -i "s|^TASK_STATUS=.*|TASK_STATUS=\"backgrounded\"|" "$TASK_META"
+    sed -i "s|^TASK_PID=.*|TASK_PID=$CMD_PID|" "$TASK_META"
     
     LOG yellow "Task backgrounded. ID: $TASK_ID"
+    LOG yellow "PID: $CMD_PID"
     LOG yellow "Use View_Task_${TASK_ID} payload to monitor or export logs"
     
     # Create management payload
@@ -631,7 +674,7 @@ echo "" >> "$TASK_LOG"
 LOG cyan "[Task Output - LEFT:background ]"
 LOG yellow "B will orphan the task!"
 
-# Execute command in background with output streaming
+# Execute command in background with output streaming and completion handling
 (
     eval "$CMD" 2>&1 | while IFS= read -r line; do
         echo "$line" >> "$TASK_LOG"
@@ -639,6 +682,29 @@ LOG yellow "B will orphan the task!"
     done
     exit_code=${PIPESTATUS[0]}
     echo "$exit_code" > "$TASK_DIR/$TASK_ID.exit"
+    
+    # Check if task was backgrounded and send alert on completion
+    if [ -f "$TASK_META" ]; then
+        source "$TASK_META"
+        if [ "$TASK_STATUS" = "backgrounded" ]; then
+            # Update metadata with completion
+            echo "" >> "$TASK_LOG"
+            echo "=== Ended: $(date '+%Y-%m-%d %H:%M:%S') ===" >> "$TASK_LOG"
+            echo "=== Exit Code: $exit_code ===" >> "$TASK_LOG"
+            
+            sed -i "s|^TASK_STATUS=.*|TASK_STATUS=\"completed\"|" "$TASK_META"
+            echo "TASK_END_TIME=\"$(date '+%Y-%m-%d %H:%M:%S')\"" >> "$TASK_META"
+            echo "TASK_EXIT_CODE=$exit_code" >> "$TASK_META"
+            
+            # Send alert for backgrounded task completion
+            if [ $exit_code -eq 0 ]; then
+                ALERT "Task $TASK_ID completed successfully"
+            else
+                ALERT "Task $TASK_ID completed with errors (Exit $exit_code)"
+            fi
+        fi
+    fi
+    
     exit $exit_code
 ) &
 
@@ -681,13 +747,9 @@ while kill -0 $CMD_PID 2>/dev/null; do
     # Check for terminate signal
     if [ -f "$TASK_DIR/$TASK_ID.terminate" ]; then
         rm -f "$TASK_DIR/$TASK_ID.terminate"
-        LOG yellow "Terminating..."
+        LOG yellow "Exiting (task will continue)..."
         kill $INPUT_PID 2>/dev/null
         wait $INPUT_PID 2>/dev/null
-        kill -TERM $CMD_PID 2>/dev/null
-        sleep 1
-        kill -KILL $CMD_PID 2>/dev/null
-        wait $CMD_PID 2>/dev/null
         EXIT_CODE=130
         break
     fi
@@ -725,19 +787,18 @@ META_END_EOF
     # Log results
     if [ $EXIT_CODE -eq 0 ]; then
         LOG green "══ Task Complete: Exit $EXIT_CODE (Success) ══"
-        ALERT "Task $TASK_ID completed successfully"
     else
         LOG red "══ Task Complete: Exit $EXIT_CODE (Failed) ══"
-        ALERT "Task $TASK_ID completed with errors (Exit $EXIT_CODE)"
     fi
     
     # Create management payload for viewing logs
     create_management_payload "$TASK_ID"
     
     # Post-completion menu
-    LOG cyan "LEFT:View log | RIGHT:Export | DOWN:Delete | B:Exit"
+    LOG yellow "Waiting for input..."
+    LOG yellow "LEFT:Exit | RIGHT:Export | DOWN:Delete Task"
     
-    resp=$(WAIT_FOR_INPUT "Press directional button or B to exit")
+    resp=$(WAIT_FOR_INPUT)
     case $? in
         $DUCKYSCRIPT_CANCELLED)
             exit $EXIT_CODE
@@ -750,12 +811,10 @@ META_END_EOF
     
     case "$resp" in
         "LEFT")
-            # View full log
-            LOG green "=== Full Task Log ==="
-            cat "$TASK_LOG"
-            WAIT_FOR_BUTTON_PRESS
+            LOG "Exiting"
             ;;
         "RIGHT")
+            LOG "Exporting log to loot..."
             # Export log
             mkdir -p /root/loot/metapayload
             cp "$TASK_LOG" "/root/loot/metapayload/${TASK_ID}_export.log"
@@ -764,6 +823,7 @@ META_END_EOF
             ;;
         "DOWN")
             # Delete task
+            LOG "Delete task"
             resp=$(CONFIRMATION_DIALOG "Delete this task?" "This will remove all task data")
             case $? in
                 $DUCKYSCRIPT_REJECTED|$DUCKYSCRIPT_ERROR)
