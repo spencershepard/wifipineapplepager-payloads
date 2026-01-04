@@ -308,51 +308,30 @@ PKG_CHECK_START
         sed -i "s|{{PACKAGE_LIST}}|$pkg_list|g" "$payload_file"
     fi
 
-    # Add required variable checking
-    if [ -n "$required_vars" ] && [ "$required_vars" != "null" ]; then
+    # Check if there are any variables at all
+    local has_vars=false
+    if ([ -n "$required_vars" ] && [ "$required_vars" != "null" ] && [ "$required_vars" != "[]" ]) || 
+       ([ -n "$optional_vars" ] && [ "$optional_vars" != "null" ] && [ "$optional_vars" != "{}" ]); then
+        has_vars=true
+    fi
+    
+    # Set defaults for required variables (empty string)
+    if [ -n "$required_vars" ] && [ "$required_vars" != "null" ] && [ "$required_vars" != "[]" ]; then
         echo "$required_vars" | jq -r '.[]' | while read -r var; do
-            local picker_type=$(detect_picker_type "$var" "")
-            
-            cat >> "$payload_file" << VAR_CHECK
-# Check required variable: $var
+            cat >> "$payload_file" << REQ_VAR_DEFAULT
+# Set default for required variable: $var (must be set)
 if [ -z "\${$var}" ]; then
-    resp=\$($picker_type "Enter $var" "")
-    case \$? in
-        \$DUCKYSCRIPT_CANCELLED|\$DUCKYSCRIPT_REJECTED|\$DUCKYSCRIPT_ERROR)
-            LOG red "Cancelled or error setting $var"
-            exit 1
-            ;;
-    esac
-    export $var="\$resp"
-    save_var "$var" "\$resp"
+    export $var=""
 fi
 
-VAR_CHECK
+REQ_VAR_DEFAULT
         done
     fi
     
-    # Add optional variable handling
+    # Set defaults for optional variables
     if [ -n "$optional_vars" ] && [ "$optional_vars" != "null" ] && [ "$optional_vars" != "{}" ]; then
-        # Check if there are actually any optional variables
-        local opt_var_count=$(echo "$optional_vars" | jq 'length')
-        
-        if [ "$opt_var_count" -gt 0 ]; then
-            # Add general confirmation for changing optional vars
-            cat >> "$payload_file" << 'OPT_VAR_GENERAL'
 
-# Ask if user wants to change any optional variables
-change_optional=$(CONFIRMATION_DIALOG "Change optional variables?")
-case $? in
-    $DUCKYSCRIPT_REJECTED|$DUCKYSCRIPT_ERROR)
-        LOG red "Error in dialog"
-        exit 1
-        ;;
-esac
-
-OPT_VAR_GENERAL
-        fi
-
-        # Set defaults first
+        # Set defaults for optional variables
         echo "$optional_vars" | jq -r 'to_entries[] | "\(.key)=\(.value)"' | while IFS='=' read -r var default; do
             cat >> "$payload_file" << OPT_VAR_DEFAULT
 # Set default for optional variable: $var
@@ -362,15 +341,110 @@ fi
 
 OPT_VAR_DEFAULT
         done
-        
-        if [ "$opt_var_count" -gt 0 ]; then
-            # Only ask about individual vars if user confirmed
-            cat >> "$payload_file" << 'OPT_VAR_CHECK_START'
-# Only ask about individual optional vars if user wants to change them
-if [ "$change_optional" == "$DUCKYSCRIPT_USER_CONFIRMED" ]; then
-OPT_VAR_CHECK_START
-        fi
+    fi
+    
+    # Ask if user wants to change any variables (required or optional)
+    if [ "$has_vars" = true ]; then
+        cat >> "$payload_file" << 'VAR_CHANGE_PROMPT'
 
+# Ask if user wants to change any variables
+change_vars=$(CONFIRMATION_DIALOG "Change variables?")
+case $? in
+    $DUCKYSCRIPT_REJECTED|$DUCKYSCRIPT_ERROR)
+        LOG red "Error in dialog"
+        exit 1
+        ;;
+esac
+
+if [ "$change_vars" == "$DUCKYSCRIPT_USER_CONFIRMED" ]; then
+VAR_CHANGE_PROMPT
+    fi
+    
+    # Handle required variables
+    if [ -n "$required_vars" ] && [ "$required_vars" != "null" ] && [ "$required_vars" != "[]" ]; then
+
+        echo "$required_vars" | jq -r '.[]' | while read -r var; do
+            local picker_type=$(detect_picker_type "$var" "")
+            local var_label="$var (required)"
+            
+            cat >> "$payload_file" << REQ_VAR_CHECK
+    # Ask about required variable: $var
+    resp=\$(CONFIRMATION_DIALOG "Change $var_label? (current: \${$var:-<not set>})")
+    case \$? in
+        \$DUCKYSCRIPT_REJECTED|\$DUCKYSCRIPT_ERROR)
+            LOG red "Error in dialog"
+            exit 1
+            ;;
+    esac
+    
+    case "\$resp" in
+        \$DUCKYSCRIPT_USER_CONFIRMED)
+            resp=\$($picker_type "Enter $var" "\${$var}")
+            case \$? in
+                \$DUCKYSCRIPT_CANCELLED|\$DUCKYSCRIPT_REJECTED|\$DUCKYSCRIPT_ERROR)
+                    LOG "Keeping current value for $var"
+                    ;;
+                *)
+                    export $var="\$resp"
+                    
+                    # Check if this is a global variable
+                    if grep -q "^${var}=" "\$METAPAYLOAD_DIR/.env" 2>/dev/null; then
+                        # Global variable - ask to update globally or use once
+                        save_resp=\$(CONFIRMATION_DIALOG "Update global $var?" "YES: Update global variable\nNO: Use for this run only")
+                        case \$? in
+                            \$DUCKYSCRIPT_REJECTED|\$DUCKYSCRIPT_ERROR)
+                                LOG "Using $var for this run only"
+                                ;;
+                            *)
+                                case "\$save_resp" in
+                                    \$DUCKYSCRIPT_USER_CONFIRMED)
+                                        # Update global variable
+                                        sed -i "s|^${var}=.*|${var}=\$resp|" "\$METAPAYLOAD_DIR/.env"
+                                        LOG green "Updated global $var"
+                                        ;;
+                                    \$DUCKYSCRIPT_USER_DENIED)
+                                        LOG "Using $var for this run only"
+                                        ;;
+                                esac
+                                ;;
+                        esac
+                    else
+                        # Local variable - ask to save locally or use once
+                        save_resp=\$(CONFIRMATION_DIALOG "Save $var?" "YES: Save for this payload\nNO: Use for this run only")
+                        case \$? in
+                            \$DUCKYSCRIPT_REJECTED|\$DUCKYSCRIPT_ERROR)
+                                LOG "Using $var for this run only"
+                                ;;
+                            *)
+                                case "\$save_resp" in
+                                    \$DUCKYSCRIPT_USER_CONFIRMED)
+                                        # Save to local payload .env
+                                        mkdir -p "\$PAYLOAD_DIR"
+                                        if grep -q "^${var}=" "\$PAYLOAD_ENV" 2>/dev/null; then
+                                            sed -i "s|^${var}=.*|${var}=\$resp|" "\$PAYLOAD_ENV"
+                                        else
+                                            echo "${var}=\$resp" >> "\$PAYLOAD_ENV"
+                                        fi
+                                        LOG green "Saved $var locally"
+                                        ;;
+                                    \$DUCKYSCRIPT_USER_DENIED)
+                                        LOG "Using $var for this run only"
+                                        ;;
+                                esac
+                                ;;
+                        esac
+                    fi
+                    ;;
+            esac
+            ;;
+    esac
+
+REQ_VAR_CHECK
+        done
+    fi
+    
+    # Handle optional variables
+    if [ -n "$optional_vars" ] && [ "$optional_vars" != "null" ] && [ "$optional_vars" != "{}" ]; then
         echo "$optional_vars" | jq -r 'to_entries[] | "\(.key)=\(.value)"' | while IFS='=' read -r var default; do
             local picker_type=$(detect_picker_type "$var" "$default")
             
@@ -394,24 +468,53 @@ OPT_VAR_CHECK_START
                 *)
                     export $var="\$resp"
                     
-                    # Ask if they want to save it
-                    save_resp=\$(CONFIRMATION_DIALOG "Save $var for next time?")
-                    case \$? in
-                        \$DUCKYSCRIPT_REJECTED|\$DUCKYSCRIPT_ERROR)
-                            LOG "Using $var for this run only"
-                            ;;
-                        *)
-                            case "\$save_resp" in
-                                \$DUCKYSCRIPT_USER_CONFIRMED)
-                                    save_var "$var" "\$resp"
-                                    LOG green "Saved $var"
-                                    ;;
-                                \$DUCKYSCRIPT_USER_DENIED)
-                                    LOG "Using $var for this run only"
-                                    ;;
-                            esac
-                            ;;
-                    esac
+                    # Check if this is a global variable
+                    if grep -q "^${var}=" "\$METAPAYLOAD_DIR/.env" 2>/dev/null; then
+                        # Global variable - ask to update globally or use once
+                        save_resp=\$(CONFIRMATION_DIALOG "Update global $var?" "YES: Update global variable\nNO: Use for this run only")
+                        case \$? in
+                            \$DUCKYSCRIPT_REJECTED|\$DUCKYSCRIPT_ERROR)
+                                LOG "Using $var for this run only"
+                                ;;
+                            *)
+                                case "\$save_resp" in
+                                    \$DUCKYSCRIPT_USER_CONFIRMED)
+                                        # Update global variable
+                                        sed -i "s|^${var}=.*|${var}=\$resp|" "\$METAPAYLOAD_DIR/.env"
+                                        LOG green "Updated global $var"
+                                        ;;
+                                    \$DUCKYSCRIPT_USER_DENIED)
+                                        LOG "Using $var for this run only"
+                                        ;;
+                                esac
+                                ;;
+                        esac
+                    else
+                        # Local variable - ask to save locally or use once
+                        save_resp=\$(CONFIRMATION_DIALOG "Save $var?" "YES: Save for this payload\nNO: Use for this run only")
+                        case \$? in
+                            \$DUCKYSCRIPT_REJECTED|\$DUCKYSCRIPT_ERROR)
+                                LOG "Using $var for this run only"
+                                ;;
+                            *)
+                                case "\$save_resp" in
+                                    \$DUCKYSCRIPT_USER_CONFIRMED)
+                                        # Save to local payload .env
+                                        mkdir -p "\$PAYLOAD_DIR"
+                                        if grep -q "^${var}=" "\$PAYLOAD_ENV" 2>/dev/null; then
+                                            sed -i "s|^${var}=.*|${var}=\$resp|" "\$PAYLOAD_ENV"
+                                        else
+                                            echo "${var}=\$resp" >> "\$PAYLOAD_ENV"
+                                        fi
+                                        LOG green "Saved $var locally"
+                                        ;;
+                                    \$DUCKYSCRIPT_USER_DENIED)
+                                        LOG "Using $var for this run only"
+                                        ;;
+                                esac
+                                ;;
+                        esac
+                    fi
                     ;;
             esac
             ;;
@@ -419,13 +522,30 @@ OPT_VAR_CHECK_START
 
 OPT_VAR_CHECK
         done
-        
-        if [ "$opt_var_count" -gt 0 ]; then
-            # Close the if statement
-            cat >> "$payload_file" << 'OPT_VAR_CHECK_END'
+    fi
+    
+    # Close the variable change block
+    if [ "$has_vars" = true ]; then
+        cat >> "$payload_file" << 'VAR_CHANGE_END'
 fi
 
-OPT_VAR_CHECK_END
+# Validate required variables are set
+VAR_CHANGE_END
+        
+        # Add validation for required variables
+        if [ -n "$required_vars" ] && [ "$required_vars" != "null" ] && [ "$required_vars" != "[]" ]; then
+            echo "$required_vars" | jq -r '.[]' | while read -r var; do
+                cat >> "$payload_file" << REQ_VAR_VALIDATE
+if [ -z "\${$var}" ]; then
+    LOG red "Required variable $var is not set"
+    exit 1
+fi
+REQ_VAR_VALIDATE
+            done
+            
+            cat >> "$payload_file" << 'VAR_VALIDATE_END'
+
+VAR_VALIDATE_END
         fi
     fi
     
@@ -697,6 +817,7 @@ LOG yellow "B will orphan the task!"
             echo "TASK_EXIT_CODE=$exit_code" >> "$TASK_META"
             
             # Send alert for backgrounded task completion
+            RINGTONE leveldone
             if [ $exit_code -eq 0 ]; then
                 ALERT "Task $TASK_ID completed successfully"
             else
@@ -797,6 +918,8 @@ META_END_EOF
     # Post-completion menu
     LOG yellow "Waiting for input..."
     LOG yellow "LEFT:Exit | RIGHT:Export | DOWN:Delete Task"
+
+    RINGTONE leveldone
     
     resp=$(WAIT_FOR_INPUT)
     case $? in

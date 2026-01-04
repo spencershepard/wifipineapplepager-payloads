@@ -2,7 +2,13 @@
 
 # MetaPayload Framework
 
-MetaPayload is a comprehensive payload framework for the Wifi Pineapple Pager that transforms how you create and manage reconnaissance tools. Define commands, variables, and dependencies in external configuration files, then generate fully-functional payloads with intelligent package management, task backgrounding, and context-aware UI integration—all without touching the core payload scripts.
+MetaPayload is a comprehensive payload framework for the Wifi Pineapple Pager that transforms how you create and manage reconnaissance and pentesting tools. Define commands, variables, and dependencies in external configuration files, then generate fully-functional payloads with intelligent package management, task backgrounding, and context-aware UI integration—all without touching the core payload scripts.
+
+Want to create fully functional payloads from command line tools?  MetaPayload makes it easy.
+
+Do you have a long running payload that you'd like to background so you can continue using the Pager?  MetaPayload has you covered.
+
+Already included are many powerful payload definitions, making MetaPayload a versatile reconnaissance toolkit out of the box.  You can also easily extend its capabilities by adding your own payload configurations in JSON format.  See below for details on included payload packs.
 
 ## Features
 - ✨ **Dynamic Payload Generation**: Create custom reconnaissance payloads by adding your own commands and variables in JSON configuration files.
@@ -13,13 +19,36 @@ MetaPayload is a comprehensive payload framework for the Wifi Pineapple Pager th
 - 🧩 **Modular Structure**: Easily add new payloads by creating configuration files in the config/ directory.
 - 🚀 **Beyond Reconnaissance**: While focused on reconnaissance, MetaPayload's flexible design allows for adaptation to other use cases.  Any command line tool chain can be integrated, with customizable payload destination (including the 'client' and 'access_point' targeted payload categories.)
 
+## Included Payload Packs 📦
+### MetaPayload Recon 
+metapayload_recon.json includes a variety of reconnaissance-focused payloads powered by nmap and arp-scan. These payloads provide everything from quick network discovery to comprehensive port scanning and service detection.
 
-## Core Payloads
+#### Quick Reconnaissance
+- **MP-Quick Hosts Scan**: Fast host discovery scan on target subnet using ARP ping for local networks. Ideal for quickly identifying live hosts without port scanning overhead.
+
+- **MP-ARP Network Scan**: Lightning-fast ARP-based network discovery with vendor MAC address identification. Uses arp-scan for efficient local network enumeration.
+
+#### Port Scanning
+- **MP-Top Ports Scan**: Quick SYN port scan targeting the most common ports. Perfect for initial reconnaissance of a specific target.
+
+- **MP-Full Port Scan**: Comprehensive SYN scan of all 65535 TCP ports. Slower but thorough.
+
+- **MP-UDP Port Scan**: Scan most common UDP ports. Note: UDP scans are inherently slow due to protocol characteristics.
+
+- **MP-Network Port Sweep**: Two-stage intelligent scan that first performs fast ARP host discovery, then port scans only live hosts. Optimizes time by avoiding scans of inactive addresses.
+
+#### Service & OS Detection
+- **MP-Service Version Detection**: Detect service versions running on open ports with configurable probing intensity.
+
+- **MP-OS Detection**: Identify target operating system and version using TCP/IP stack fingerprinting.
+
+
+## Core Payloads 🔨
 
 - **Generate_Payloads**: Generates custom payloads based on user-defined configurations in config/.
 - **List_Payloads**: Lists all available payloads defined in configuration files.
 - **Remove_Payloads**: Cleans up and removes previously created reconnaissance payloads.
-- **Task_Manager**: Displays all task status and provides task management operations (Stop all, Delete all, Export logs, Delete completed).
+- **Tasks_CLEAR_ALL**: Stop any running backgrounded tasks and clear all task logs and metadata.
 
 ## Dynamic Payloads
 The following payloads are dynamically generated based on the configurations defined in config/.
