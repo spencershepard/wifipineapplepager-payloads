@@ -1,8 +1,8 @@
 {
   "payloads": [
     {
-      "name": "MP-Quick Hosts Scan",
-      "path": "user/reconnaissance/MP_Quick_Hosts_Scan",
+      "name": "Quick Hosts Scan",
+      "path": "user/metapayload_recon/Quick_Hosts_Scan",
       "command": "nmap -sn -PR $TARGET_SUBNET -T$TIMING --max-retries $MAX_RETRIES --min-rate=$MIN_RATE -n",
       "required_vars": [
         "TARGET_SUBNET"
@@ -17,8 +17,8 @@
       "author": "MetaPayload"
     },
     {
-      "name": "MP-Top Ports Scan",
-      "path": "user/reconnaissance/MP_Quick_Port_Scan",
+      "name": "Top Ports Scan",
+      "path": "user/metapayload_recon/Quick_Port_Scan",
       "command": "nmap -sS --top-ports $NUM_PORTS -T$TIMING --max-retries $MAX_RETRIES --min-rate=$MIN_RATE -n $TARGET_IP",
       "required_vars": [
         "TARGET_IP"
@@ -34,8 +34,8 @@
       "author": "MetaPayload"
     },
     {
-      "name": "MP-Full Port Scan",
-      "path": "user/reconnaissance/MP_Full_Port_Scan",
+      "name": "Full Port Scan",
+      "path": "user/metapayload_recon/Full_Port_Scan",
       "command": "nmap -sS -p- $TARGET_IP -T$TIMING --max-retries $MAX_RETRIES -v --min-rate=$MIN_RATE -n -oN /tmp/metapayload_fullscan_$TARGET_IP.txt",
       "required_vars": [
         "TARGET_IP"
@@ -50,8 +50,8 @@
       "author": "MetaPayload"
     },
     {
-      "name": "MP-Service Version Detection",
-      "path": "user/reconnaissance/MP_Service_Detection",
+      "name": "Service Version Detection",
+      "path": "user/metapayload_recon/Service_Detection",
       "command": "nmap -sS -sV $PORT_ARGS $TARGET_IP -T$TIMING --version-intensity $VERSION_INTENSITY --min-rate=$MIN_RATE -n -oN /tmp/metapayload_services_$TARGET_IP.txt",
       "required_vars": [
         "TARGET_IP"
@@ -67,8 +67,8 @@
       "author": "MetaPayload"
     },
     {
-      "name": "MP-OS Detection",
-      "path": "user/reconnaissance/MP_OS_Detection",
+      "name": "OS Detection",
+      "path": "user/metapayload_recon/OS_Detection",
       "command": "nmap -sS -O $TARGET_IP -T$TIMING --osscan-guess --max-retries $MAX_RETRIES -n -oN /tmp/metapayload_os_$TARGET_IP.txt",
       "required_vars": [
         "TARGET_IP"
@@ -82,8 +82,8 @@
       "author": "MetaPayload"
     },
     {
-      "name": "MP-UDP Port Scan",
-      "path": "user/reconnaissance/MP_UDP_Scan",
+      "name": "UDP Port Scan",
+      "path": "user/metapayload_recon/UDP_Scan",
       "command": "nmap -sU $PORT_ARGS $TARGET_IP -T$TIMING --max-retries $MAX_RETRIES -n -oN /tmp/metapayload_udp_$TARGET_IP.txt",
       "required_vars": [
         "TARGET_IP"
@@ -98,8 +98,8 @@
       "author": "MetaPayload"
     },
     {
-      "name": "MP-ARP Network Scan",
-      "path": "user/reconnaissance/MP_ARP_Network_Scan",
+      "name": "ARP Network Scan w Vendor",
+      "path": "user/metapayload_recon/ARP_Network_Scan",
       "command": "arp-scan -I $INTERFACE --localnet --macfile /usr/share/arp-scan/mac-vendor.txt",
       "required_vars": [],
       "optional_vars": {
@@ -110,6 +110,23 @@
         "arp-scan-database"
       ],
       "description": "Fast ARP-based network discovery with vendor MAC address identification (arp-scan)",
+      "author": "MetaPayload"
+    },
+    {
+      "name": "Network Port Sweep",
+      "path": "user/metapayload_recon/Network_Port_Sweep",
+      "command": "echo 'Finding live hosts...' && nmap -sn -PR $TARGET_SUBNET -n -oG - | grep 'Host:' | awk '{print \\$2}' | xargs > /tmp/live_hosts.txt && cat /tmp/live_hosts.txt && [ -s /tmp/live_hosts.txt ] && nmap -sS --top-ports $NUM_PORTS -T$TIMING --max-retries $MAX_RETRIES --min-rate=$MIN_RATE -n -iL /tmp/live_hosts.txt -oN /tmp/metapayload_netsweep_$(date +%s).txt || echo 'No live hosts found'",
+      "required_vars": [
+        "TARGET_SUBNET"
+      ],
+      "optional_vars": {
+        "NUM_PORTS": "100",
+        "TIMING": "5",
+        "MAX_RETRIES": "0",
+        "MIN_RATE": "1000"
+      },
+      "required_packages": [],
+      "description": "Two-stage scan: fast ARP host discovery, then port scan only live hosts (nmap)",
       "author": "MetaPayload"
     }
   ]
