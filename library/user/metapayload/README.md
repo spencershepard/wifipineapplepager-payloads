@@ -172,6 +172,11 @@ The system automatically selects the appropriate UI picker based on variable nam
    - Error: LOG red {stderr + stdout}
 8. Exit with command return code
 
+## Future Enhancements
+- Selectable export types when exporting task logs (loot folder, Discord, etc)
+- Task naming conventions for easier identification
+- Existing payload wrapper - to allow other payloads to be run within the metapayload framework
+
 ## Known Issues
 - Backgrounded tasks may produce log output into other payloads' logs if multiple tasks are running simultaneously.
 - Directional button responsiveness when trying to background a running task can be inconsistent; multiple presses may be required.
