@@ -131,7 +131,7 @@
     },
     {
       "name": "Network Web Sweep",
-      "path": "user/metapayload_webapp_scan/Network_Web_Sweep",
+      "path": "user/metapayload_recon/Network_Web_Sweep",
       "command": "echo 'Finding web servers on subnet...' && nmap -sS -p $WEBPORTS $TARGET_SUBNET --open -n -oG - | grep 'Ports: ' | awk '{print \\$2}' > /tmp/web_hosts.txt && if [ -s /tmp/web_hosts.txt ]; then echo 'Found hosts:' && cat /tmp/web_hosts.txt && echo '\\n=== Extracting titles ===' && while read host; do echo \\\"\\n[\\$host]\\\"; curl -sk -m 3 https://\\$host 2>/dev/null | grep -o '<title>.*</title>' | head -1 || curl -s -m 3 http://\\$host 2>/dev/null | grep -o '<title>.*</title>' | head -1; done < /tmp/web_hosts.txt; else echo 'No web servers found on subnet'; fi",
       "required_vars": [
         "TARGET_SUBNET"
