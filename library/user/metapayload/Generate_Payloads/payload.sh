@@ -2,7 +2,7 @@
 # Title: Generate Payloads
 # Description: Generates MetaPayload reconnaissance payloads from configuration files
 # Author: spencershepard (GRIMM)
-# Version: 1.0
+# Version: 1.1
 
 
 METAPAYLOAD_DIR="/root/payloads/user/metapayload"
@@ -146,6 +146,71 @@ save_var() {
             echo "${var_name}=${var_value}" >> "$PAYLOAD_ENV"
         fi
     fi
+}
+
+# Function to prompt and save a variable
+prompt_and_save_variable() {
+    local var_name="$1"
+    local picker_type="$2"
+    local prompt_msg="$3"
+    local current_value="${!var_name}"
+    
+    resp=$(${picker_type} "${prompt_msg}" "${current_value}")
+    case $? in
+        $DUCKYSCRIPT_CANCELLED|$DUCKYSCRIPT_REJECTED|$DUCKYSCRIPT_ERROR)
+            return 1
+            ;;
+        *)
+            export ${var_name}="${resp}"
+            
+            # Check if this is a global variable
+            if grep -q "^${var_name}=" "$METAPAYLOAD_DIR/.env" 2>/dev/null; then
+                # Global variable - ask to update globally or use once
+                save_resp=$(CONFIRMATION_DIALOG "Update global ${var_name}?" "YES: Update global variable\nNO: Use for this run only")
+                case $? in
+                    $DUCKYSCRIPT_REJECTED|$DUCKYSCRIPT_ERROR)
+                        LOG "Using ${var_name} for this run only"
+                        ;;
+                    *)
+                        case "$save_resp" in
+                            $DUCKYSCRIPT_USER_CONFIRMED)
+                                sed -i "s|^${var_name}=.*|${var_name}=${resp}|" "$METAPAYLOAD_DIR/.env"
+                                LOG green "Updated global ${var_name}"
+                                ;;
+                            $DUCKYSCRIPT_USER_DENIED)
+                                LOG "Using ${var_name} for this run only"
+                                ;;
+                        esac
+                        ;;
+                esac
+            else
+                # Local variable - ask to save locally or use once
+                save_resp=$(CONFIRMATION_DIALOG "Save ${var_name}?" "YES: Save for this payload\nNO: Use for this run only")
+                case $? in
+                    $DUCKYSCRIPT_REJECTED|$DUCKYSCRIPT_ERROR)
+                        LOG "Using ${var_name} for this run only"
+                        ;;
+                    *)
+                        case "$save_resp" in
+                            $DUCKYSCRIPT_USER_CONFIRMED)
+                                mkdir -p "$PAYLOAD_DIR"
+                                if grep -q "^${var_name}=" "$PAYLOAD_ENV" 2>/dev/null; then
+                                    sed -i "s|^${var_name}=.*|${var_name}=${resp}|" "$PAYLOAD_ENV"
+                                else
+                                    echo "${var_name}=${resp}" >> "$PAYLOAD_ENV"
+                                fi
+                                LOG green "Saved ${var_name} locally"
+                                ;;
+                            $DUCKYSCRIPT_USER_DENIED)
+                                LOG "Using ${var_name} for this run only"
+                                ;;
+                        esac
+                        ;;
+                esac
+            fi
+            return 0
+            ;;
+    esac
 }
 
 PAYLOAD_HEADER
@@ -332,64 +397,10 @@ OPT_VAR_DEFAULT
             cat >> "$payload_file" << REQ_VAR_IMMEDIATE
 # Check if required variable $var is unset - prompt immediately
 if [ -z "\${$var}" ]; then
-    resp=\$($picker_type "Enter $var (required)" "\${$var}")
-    case \$? in
-        \$DUCKYSCRIPT_CANCELLED|\$DUCKYSCRIPT_REJECTED|\$DUCKYSCRIPT_ERROR)
-            LOG red "Required variable $var must be set"
-            exit 1
-            ;;
-        *)
-            export $var="\$resp"
-            
-            # Check if this is a global variable
-            if grep -q "^${var}=" "\$METAPAYLOAD_DIR/.env" 2>/dev/null; then
-                # Global variable - ask to update globally or use once
-                save_resp=\$(CONFIRMATION_DIALOG "Update global $var?" "YES: Update global variable\nNO: Use for this run only")
-                case \$? in
-                    \$DUCKYSCRIPT_REJECTED|\$DUCKYSCRIPT_ERROR)
-                        LOG "Using $var for this run only"
-                        ;;
-                    *)
-                        case "\$save_resp" in
-                            \$DUCKYSCRIPT_USER_CONFIRMED)
-                                # Update global variable
-                                sed -i "s|^${var}=.*|${var}=\$resp|" "\$METAPAYLOAD_DIR/.env"
-                                LOG green "Updated global $var"
-                                ;;
-                            \$DUCKYSCRIPT_USER_DENIED)
-                                LOG "Using $var for this run only"
-                                ;;
-                        esac
-                        ;;
-                esac
-            else
-                # Local variable - ask to save locally or use once
-                save_resp=\$(CONFIRMATION_DIALOG "Save $var?" "YES: Save for this payload\nNO: Use for this run only")
-                case \$? in
-                    \$DUCKYSCRIPT_REJECTED|\$DUCKYSCRIPT_ERROR)
-                        LOG "Using $var for this run only"
-                        ;;
-                    *)
-                        case "\$save_resp" in
-                            \$DUCKYSCRIPT_USER_CONFIRMED)
-                                # Save to local payload .env
-                                mkdir -p "\$PAYLOAD_DIR"
-                                if grep -q "^${var}=" "\$PAYLOAD_ENV" 2>/dev/null; then
-                                    sed -i "s|^${var}=.*|${var}=\$resp|" "\$PAYLOAD_ENV"
-                                else
-                                    echo "${var}=\$resp" >> "\$PAYLOAD_ENV"
-                                fi
-                                LOG green "Saved $var locally"
-                                ;;
-                            \$DUCKYSCRIPT_USER_DENIED)
-                                LOG "Using $var for this run only"
-                                ;;
-                        esac
-                        ;;
-                esac
-            fi
-            ;;
-    esac
+    if ! prompt_and_save_variable "$var" "$picker_type" "Enter $var (required)"; then
+        LOG red "Required variable $var must be set"
+        exit 1
+    fi
 fi
 
 REQ_VAR_IMMEDIATE
@@ -454,63 +465,9 @@ VAR_CHANGE_DIALOG
     
     case "\$resp" in
         \$DUCKYSCRIPT_USER_CONFIRMED)
-            resp=\$($picker_type "Enter $var" "\${$var}")
-            case \$? in
-                \$DUCKYSCRIPT_CANCELLED|\$DUCKYSCRIPT_REJECTED|\$DUCKYSCRIPT_ERROR)
-                    LOG "Keeping current value for $var"
-                    ;;
-                *)
-                    export $var="\$resp"
-                    
-                    # Check if this is a global variable
-                    if grep -q "^${var}=" "\$METAPAYLOAD_DIR/.env" 2>/dev/null; then
-                        # Global variable - ask to update globally or use once
-                        save_resp=\$(CONFIRMATION_DIALOG "Update global $var?" "YES: Update global variable\nNO: Use for this run only")
-                        case \$? in
-                            \$DUCKYSCRIPT_REJECTED|\$DUCKYSCRIPT_ERROR)
-                                LOG "Using $var for this run only"
-                                ;;
-                            *)
-                                case "\$save_resp" in
-                                    \$DUCKYSCRIPT_USER_CONFIRMED)
-                                        # Update global variable
-                                        sed -i "s|^${var}=.*|${var}=\$resp|" "\$METAPAYLOAD_DIR/.env"
-                                        LOG green "Updated global $var"
-                                        ;;
-                                    \$DUCKYSCRIPT_USER_DENIED)
-                                        LOG "Using $var for this run only"
-                                        ;;
-                                esac
-                                ;;
-                        esac
-                    else
-                        # Local variable - ask to save locally or use once
-                        save_resp=\$(CONFIRMATION_DIALOG "Save $var?" "YES: Save for this payload\nNO: Use for this run only")
-                        case \$? in
-                            \$DUCKYSCRIPT_REJECTED|\$DUCKYSCRIPT_ERROR)
-                                LOG "Using $var for this run only"
-                                ;;
-                            *)
-                                case "\$save_resp" in
-                                    \$DUCKYSCRIPT_USER_CONFIRMED)
-                                        # Save to local payload .env
-                                        mkdir -p "\$PAYLOAD_DIR"
-                                        if grep -q "^${var}=" "\$PAYLOAD_ENV" 2>/dev/null; then
-                                            sed -i "s|^${var}=.*|${var}=\$resp|" "\$PAYLOAD_ENV"
-                                        else
-                                            echo "${var}=\$resp" >> "\$PAYLOAD_ENV"
-                                        fi
-                                        LOG green "Saved $var locally"
-                                        ;;
-                                    \$DUCKYSCRIPT_USER_DENIED)
-                                        LOG "Using $var for this run only"
-                                        ;;
-                                esac
-                                ;;
-                        esac
-                    fi
-                    ;;
-            esac
+            if ! prompt_and_save_variable "$var" "$picker_type" "Enter $var"; then
+                LOG "Keeping current value for $var"
+            fi
             ;;
     esac
 
@@ -535,63 +492,9 @@ REQ_VAR_CHANGE
     
     case "\$resp" in
         \$DUCKYSCRIPT_USER_CONFIRMED)
-            resp=\$($picker_type "Enter $var" "\${$var}")
-            case \$? in
-                \$DUCKYSCRIPT_CANCELLED|\$DUCKYSCRIPT_REJECTED|\$DUCKYSCRIPT_ERROR)
-                    LOG "Keeping current value for $var"
-                    ;;
-                *)
-                    export $var="\$resp"
-                    
-                    # Check if this is a global variable
-                    if grep -q "^${var}=" "\$METAPAYLOAD_DIR/.env" 2>/dev/null; then
-                        # Global variable - ask to update globally or use once
-                        save_resp=\$(CONFIRMATION_DIALOG "Update global $var?" "YES: Update global variable\nNO: Use for this run only")
-                        case \$? in
-                            \$DUCKYSCRIPT_REJECTED|\$DUCKYSCRIPT_ERROR)
-                                LOG "Using $var for this run only"
-                                ;;
-                            *)
-                                case "\$save_resp" in
-                                    \$DUCKYSCRIPT_USER_CONFIRMED)
-                                        # Update global variable
-                                        sed -i "s|^${var}=.*|${var}=\$resp|" "\$METAPAYLOAD_DIR/.env"
-                                        LOG green "Updated global $var"
-                                        ;;
-                                    \$DUCKYSCRIPT_USER_DENIED)
-                                        LOG "Using $var for this run only"
-                                        ;;
-                                esac
-                                ;;
-                        esac
-                    else
-                        # Local variable - ask to save locally or use once
-                        save_resp=\$(CONFIRMATION_DIALOG "Save $var?" "YES: Save for this payload\nNO: Use for this run only")
-                        case \$? in
-                            \$DUCKYSCRIPT_REJECTED|\$DUCKYSCRIPT_ERROR)
-                                LOG "Using $var for this run only"
-                                ;;
-                            *)
-                                case "\$save_resp" in
-                                    \$DUCKYSCRIPT_USER_CONFIRMED)
-                                        # Save to local payload .env
-                                        mkdir -p "\$PAYLOAD_DIR"
-                                        if grep -q "^${var}=" "\$PAYLOAD_ENV" 2>/dev/null; then
-                                            sed -i "s|^${var}=.*|${var}=\$resp|" "\$PAYLOAD_ENV"
-                                        else
-                                            echo "${var}=\$resp" >> "\$PAYLOAD_ENV"
-                                        fi
-                                        LOG green "Saved $var locally"
-                                        ;;
-                                    \$DUCKYSCRIPT_USER_DENIED)
-                                        LOG "Using $var for this run only"
-                                        ;;
-                                esac
-                                ;;
-                        esac
-                    fi
-                    ;;
-            esac
+            if ! prompt_and_save_variable "$var" "$picker_type" "Enter $var"; then
+                LOG "Keeping current value for $var"
+            fi
             ;;
     esac
 
@@ -627,7 +530,8 @@ VAR_VALIDATE_END
     cat >> "$payload_file" << 'EXEC_CMD'
 
 # Task Management Setup
-TASK_DIR="/root/payloads/user/metapayload/.tasks"
+METAPAYLOAD_DIR="/root/payloads/user/metapayload"
+TASK_DIR="$METAPAYLOAD_DIR/.tasks"
 PAYLOAD_NAME="{{PAYLOAD_NAME_SANITIZED}}"
 COUNTER_FILE="$TASK_DIR/.counter"
 
@@ -767,7 +671,7 @@ if [ -n "$TASK_PID" ] && kill -0 "$TASK_PID" 2>/dev/null; then
 fi
 
 LOG "Log tail:"
-LOG "$(tail -n 25 "$TASK_LOG")"
+LOG "$(tail -n 200 "$TASK_LOG")"
 LOG ""
 LOG yellow "# LEFT:View | RIGHT:Export | DOWN:Delete Task #"
 LOG yellow "#->"
@@ -791,9 +695,7 @@ case "$resp" in
     "RIGHT")
         LOG cyan "#--> Export log"
         if [ -f "$TASK_LOG" ]; then
-            mkdir -p /root/loot/metapayload
-            cp "$TASK_LOG" "/root/loot/metapayload/${TASK_ID}_export.log"
-            LOG green "Exported to /root/loot/metapayload/${TASK_ID}_export.log"
+            LOG blue $(/bin/bash "$MGMT_DIR/scripts/export_task_log.sh" "$TASK_ID" 2>&1) >> "$TASK_LOG"
         else
             LOG red "No log file found"
         fi
@@ -872,6 +774,9 @@ EXEC_CMD
     
     # Replace payload name placeholder in EXEC_CMD section
     sed -i "s|{{PAYLOAD_NAME_SANITIZED}}|${sanitized_name}|g" "$payload_file"
+    
+    # Replace other placeholders in EXEC_CMD section
+    sed -i "s|{{METAPAYLOAD_DIR}}|${METAPAYLOAD_DIR}|g" "$payload_file"
     
     # Properly escape the command for the payload script
     printf 'CMD="%s"\n' "$command" >> "$payload_file"
@@ -1066,9 +971,11 @@ META_END_EOF
             # Export log
             RINGTONE getkey
             LOG cyan "#--> Export log"
-            mkdir -p /root/loot/metapayload
-            cp "$TASK_LOG" "/root/loot/metapayload/${TASK_ID}_export.log"
-            LOG green "Exported to /root/loot/metapayload/${TASK_ID}_export.log"
+            if [ -f "$TASK_LOG" ]; then
+                LOG blue $(/bin/bash "$METAPAYLOAD_DIR/scripts/export_task_log.sh" "$TASK_ID" 2>&1) >> "$TASK_LOG"
+            else
+                LOG red "No log file found"
+            fi
             WAIT_FOR_BUTTON_PRESS
             ;;
         "DOWN")
@@ -1104,7 +1011,7 @@ META_END_EOF
 fi
 EXEC_CMD_END
 
-    chmod +x "$payload_file"
+    # chmod +x "$payload_file" # executable not needed for the pager
     LOG green "Generated: $path"
     
 }
