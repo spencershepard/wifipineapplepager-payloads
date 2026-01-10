@@ -1,8 +1,54 @@
 ![MetaPayload Logo](logo.png)
 
-# MetaPayload Framework
+# The Swiss Army Knife of Payloads for the Wifi Pineapple Pager! 🍍
 
-**Includes more than 20 payloads out of the box!** See the [Included Payload Packs](#included-payload-packs-📦) section below for details.
+👉**Includes more than 20 payloads out of the box!** See the [Included Payload Packs](#included-payload-packs-📦) section below for details.
+
+Run payloads, keep track of results, export logs to Discord and more - all from the Pager interface!
+
+## Video Review
+
+[![Watch the video](https://i.ytimg.com/an_webp/45Wbnfh4HXc/mqdefault_6s.webp?du=3000&sqp=CJPBissG&rs=AOn4CLDxPLvPQ4tKHUSEZS-_4ZE2TRZ38g)](https://www.youtube.com/live/45Wbnfh4HXc?si=1Txkxtf60HLsgV7v&t=10148)
+
+Watch Hak5's Darren Kitchen review MetaPayload and demonstrate its features on the Wifi Pineapple Pager: https://www.youtube.com/live/45Wbnfh4HXc?si=1Txkxtf60HLsgV7v&t=10148
+
+
+## Get Started Easily 🚀
+1. Install the metapayload directory as /root/payloads/user/metapayload
+2. On the pager, Payloads > metapayload > Generate Payloads
+3. Find generated payloads under Payloads > metapayload_recon
+
+## Included Payload Packs
+
+### 🔭 MetaPayload Recon 
+metapayload_recon.json includes a variety of reconnaissance-focused payloads powered by nmap and arp-scan.  These payloads provide everything from quick network discovery to comprehensive port scanning and service detection.
+
+- **Quick Hosts Scan**: [TARGET_SUBNET]
+- **ARP Network Scan**: [TARGET_SUBNET]
+- **Top Ports Scan**: [TARGET_IP]
+- **Full Port Scan**: [TARGET_IP]
+- **UDP Port Scan**: [TARGET_IP]
+- **Network Port Sweep**: [TARGET_SUBNET]
+- **Network Web Sweep**: [TARGET_SUBNET]
+- **Service Version Detection**: [TARGET_IP]
+- **OS Detection**: [TARGET_IP]
+
+###  🛠 MetaPayload Sys Utils
+metapayload_sysutils.json includes a set of essential system utility payloads for gathering system information, monitoring processes, managing files, etc
+
+- **System Information**
+- **Disk Usage (df)**
+- **Process List (ps)**
+- **Top Processes (top)**
+- **Process Grep (pgrep)**
+- **Network Connections (netstat)**
+- **Find Files by Name (find)**
+- **Find File Content (grep -r)**
+- **Install Package (opkg)**
+
+
+#
+#  🍍MetaPayload Framework For Advanced Users:
 
 MetaPayload is a comprehensive payload framework for the Wifi Pineapple Pager that provides many powerfull features for creating, managing, and executing dynamic payloads.  It is designed to simplify the process of building complex command line tool chains into easy-to-use payloads that can be executed directly from the Pager interface.
 
@@ -24,91 +70,20 @@ Already included are many powerful payload definitions, making MetaPayload a ver
 - 🧩 **Modular Structure**: Easily add new payloads by creating configuration files in the config/ directory.
 - 🚀 **Beyond Reconnaissance**: While focused on reconnaissance, MetaPayload's flexible design allows for adaptation to other use cases.  Any command line tool chain can be integrated, with customizable payload destination (including the 'client' and 'access_point' targeted payload categories.)
 
-## Included Payload Packs 📦
-
-### MetaPayload Recon 
-metapayload_recon.json includes a variety of reconnaissance-focused payloads powered by nmap and arp-scan.  These payloads provide everything from quick network discovery to comprehensive port scanning and service detection.
-
-#### Quick Reconnaissance
-- **MP-Quick Hosts Scan**: Fast host discovery scan on target subnet using ARP ping for local networks.  Ideal for quickly identifying live hosts without port scanning overhead. 
-
-- **MP-ARP Network Scan**: Lightning-fast ARP-based network discovery with vendor MAC address identification. Uses arp-scan for efficient local network enumeration.
-
-#### Port Scanning
-- **MP-Top Ports Scan**: Quick SYN port scan targeting the most common ports.  Perfect for initial reconnaissance of a specific target.
-
-- **MP-Full Port Scan**: Comprehensive SYN scan of all 65535 TCP ports. Slower but thorough. 
-
-- **MP-UDP Port Scan**: Scan most common UDP ports.  Note: UDP scans are inherently slow due to protocol characteristics.
-
-- **MP-Network Port Sweep**: Two-stage intelligent scan that first performs fast ARP host discovery, then port scans only live hosts. Optimizes time by avoiding scans of inactive addresses.
-
-- **MP-Network Web Sweep**: Sweep entire subnet for web servers and extract page titles. 
-
-#### Service & OS Detection
-- **MP-Service Version Detection**: Detect service versions running on open ports with configurable probing intensity.
-
-- **MP-OS Detection**: Identify target operating system and version using TCP/IP stack fingerprinting. 
 
 
-### MetaPayload System Utils
-metapayload_sys_utils.json provides essential system administration and diagnostic utilities for the WiFi Pineapple Pager.
-
-#### System Monitoring
-- **System Information**: Comprehensive system information summary (kernel, uptime, memory, CPU).
-
-- **Disk Usage (df)**: Display filesystem usage and identify largest directories.
-
-- **Process List (ps)**: Display running processes list with specified number of lines.
-
-- **Top Processes (top)**: Display top processes snapshot with CPU and memory usage. 
-
-- **Process Grep (pgrep)**: Search for processes by name pattern.
-
-#### Network Utilities
-- **Network Connections (netstat)**: Display active network connections and listening ports.
-
-#### File Operations
-- **Find Files by Name (find)**: Recursively search for files by name pattern.
-
-- **Find File Content (grep -r)**: Recursively search file contents for pattern.
-
-#### Package Management
-- **Install Package (opkg)**: Update package lists and install a specific package via opkg. 
-
-
-## Core Payloads 🔨
+## 🔨Core Payloads 
 
 - **Generate_Payloads**: Generates custom payloads based on user-defined configurations in config/.
 - **List_Payloads**: Lists all available payloads defined in configuration files.
 - **Remove_Payloads**: Cleans up and removes previously created reconnaissance payloads.
 - **Tasks_CLEAR_ALL**: Stop any running backgrounded tasks and clear all task logs and metadata.
 
-## Dynamic Payloads
+## 🪄Dynamic Payloads
 The following payloads are dynamically generated based on the configurations defined in config/.
 - **Set_{varname}**: Sets global variables used across payloads (only generated for variables defined in metapayload/.env).
 - **View_Task_{taskid}**: Monitor or manage individual background tasks (auto-generated when tasks are created).
 - **{path/category/payload_name}**: Custom payloads as defined in the configuration files.
-
-## Directory Structure
-```
-metapayload/
-├── README.md
-├── logo.png
-├── example.env               # Example global variables template
-├── .env                      # Global variables (generated from example.env)
-├── .tasks/                   # Task metadata and logs
-├── Generate_Payloads/
-│   └── payload.sh
-├── List_Payloads/
-│   └── payload.sh
-├── Remove_Payloads/
-│   └── payload.sh
-├── Task_Manager/             # Work in progress
-│   └── payload.sh
-└── config/
-    └── *.json                # Payload configuration files
-```
 
 ## How It Works
 1. **Configuration**: Define commands, variables, and settings in config/config.json or add custom JSON files in config/.
